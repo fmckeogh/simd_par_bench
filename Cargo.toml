@@ -14,5 +14,9 @@ ndarray = { version = "0.13.0", features = ["rayon", "blas"] }
 criterion = "0.3"
 
 [[bench]]
-name = "my_benchmark"
+name = "simd_rayon"
+harness = false
+
+[[bench]]
+name = "ndarray"
 harness = false

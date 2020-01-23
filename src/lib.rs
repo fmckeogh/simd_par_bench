@@ -1,8 +1,7 @@
-use simdeez::avx2::*;
-use simdeez::scalar::*;
-use simdeez::sse2::*;
-use simdeez::sse41::*;
-use simdeez::*;
+use {
+    ndarray::{Array3, ArrayView3},
+    simdeez::{avx2::*, scalar::*, sse2::*, sse41::*, *},
+};
 
 // If you want your SIMD function to use use runtime feature detection to call
 // the fastest available version, use the simd_runtime_generate macro:
@@ -34,5 +33,35 @@ simd_runtime_generate!(
             S::storeu_ps(&mut result[i], distance);
         }
         result
+    }
+);
+
+simd_runtime_generate!(
+    pub fn add(a: &mut Array3<f64>, b: ArrayView3<f64>) {
+        {
+            let a = a.as_slice_memory_order_mut().unwrap();
+            let b = b.as_slice_memory_order().unwrap();
+
+            for i in (0..a.len()).step_by(S::VF32_WIDTH) {
+                let a0 = S::loadu_pd(&a[i]);
+                let b0 = S::loadu_pd(&b[i]);
+                S::storeu_pd(&mut a[i], a0 + b0);
+            }
+        }
+    }
+);
+
+simd_runtime_generate!(
+    pub fn sub(a: &mut Array3<f64>, b: ArrayView3<f64>) {
+        {
+            let a = a.as_slice_memory_order_mut().unwrap();
+            let b = b.as_slice_memory_order().unwrap();
+
+            for i in (0..a.len()).step_by(S::VF32_WIDTH) {
+                let a0 = S::loadu_pd(&a[i]);
+                let b0 = S::loadu_pd(&b[i]);
+                S::storeu_pd(&mut a[i], a0 - b0);
+            }
+        }
     }
 );
