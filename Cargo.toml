@@ -9,6 +9,7 @@ rayon = "1.3.0"
 simdeez = "1.0.0"
 rand = "0.7.3"
 ndarray = { version = "0.13.0", features = ["rayon", "blas"] }
+arrayfire = "3.6.2"
 
 [dev-dependencies]
 criterion = "0.3"
