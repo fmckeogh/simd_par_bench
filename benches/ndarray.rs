@@ -1,90 +1,106 @@
 use {
-    criterion::{black_box, criterion_group, criterion_main, Criterion},
-    ndarray::{Array3, Zip},
-    rand::prelude::*,
-    simd_par_bench::*,
+    criterion::{black_box, criterion_group, criterion_main, Benchmark, Criterion},
+    ndarray::{Axis, Zip},
+    rayon::prelude::*,
+    simd_par_bench::{gen_array, NZ},
+    std::sync::{Arc, Mutex},
 };
 
-const NG: usize = 128;
-const NZ: usize = 16;
+fn muladd_benchmark(c: &mut Criterion) {
+    c.bench(
+        "ndarray",
+        Benchmark::new("muladd_zip", |b| {
+            let mut arr1 = gen_array();
+            let arr2 = gen_array();
+            let arr3 = gen_array();
 
-fn addsub_benchmark(c: &mut Criterion) {
-    let mut rng = rand::thread_rng();
+            b.iter(|| {
+                Zip::from(black_box(&mut arr1))
+                    .and(black_box(&arr2))
+                    .and(black_box(&arr3))
+                    .apply(|a, b, c| *a += b * c);
+            })
+        })
+        .sample_size(10),
+    );
 
-    let mut arr1 = {
-        let mut data = vec![0.0; NG * NG * NZ];
-        for e in data.iter_mut() {
-            *e = rng.gen::<f64>();
-        }
-        Array3::from_shape_vec((NG, NG, NZ), data).unwrap()
-    };
-    let arr2 = {
-        let mut data = vec![0.0; NG * NG * NZ];
-        for e in data.iter_mut() {
-            *e = rng.gen::<f64>();
-        }
-        Array3::from_shape_vec((NG, NG, NZ), data).unwrap()
-    };
+    c.bench(
+        "ndarray",
+        Benchmark::new("muladd_par_zip", |b| {
+            let mut arr1 = gen_array();
+            let arr2 = gen_array();
+            let arr3 = gen_array();
 
-    c.bench_function("addsub_overload", |b| {
-        b.iter(|| {
-            arr1 += black_box(&arr2);
-            arr1 -= black_box(&arr2);
+            b.iter(|| {
+                Zip::from(black_box(&mut arr1))
+                    .and(black_box(&arr2))
+                    .and(black_box(&arr3))
+                    .par_apply(|a, b, c| *a += b * c);
+            })
         })
-    });
-    c.bench_function("addsub_zip", |b| {
-        b.iter(|| {
-            Zip::from(&mut arr1)
-                .and(black_box(&arr2))
-                .apply(|a, b| *a += b);
-            Zip::from(&mut arr1)
-                .and(black_box(&arr2))
-                .apply(|a, b| *a -= b);
+        .sample_size(10),
+    );
+
+    c.bench(
+        "ndarray",
+        Benchmark::new("muladd_outer", |b| {
+            let mut arr1 = gen_array();
+            let arr2 = gen_array();
+            let arr3 = gen_array();
+
+            b.iter(|| {
+                black_box(&mut arr1)
+                    .axis_iter_mut(Axis(2))
+                    .zip(black_box(&arr2).axis_iter(Axis(2)))
+                    .zip(black_box(&arr3).axis_iter(Axis(2)))
+                    .for_each(|((a, b), c)| {
+                        Zip::from(a).and(&b).and(&c).apply(|a, b, c| *a += b * c)
+                    });
+            })
         })
-    });
-    c.bench_function("addsub_runtime_select", |b| {
-        b.iter(|| {
-            add_runtime_select(&mut arr1, black_box(arr2.view()));
-            sub_runtime_select(&mut arr1, black_box(arr2.view()));
+        .sample_size(10),
+    );
+
+    c.bench(
+        "ndarray",
+        Benchmark::new("muladd_par_outer", |b| {
+            let mut arr1 = gen_array();
+            let arr2 = gen_array();
+            let arr3 = gen_array();
+
+            b.iter(|| {
+                black_box(&mut arr1)
+                    .axis_iter_mut(Axis(2))
+                    .into_par_iter()
+                    .zip(black_box(&arr2).axis_iter(Axis(2)).into_par_iter())
+                    .zip(black_box(&arr3).axis_iter(Axis(2)).into_par_iter())
+                    .for_each(|((a, b), c)| {
+                        Zip::from(a).and(&b).and(&c).apply(|a, b, c| *a += b * c)
+                    });
+            })
         })
-    });
+        .sample_size(10),
+    );
+
+    c.bench(
+        "ndarray",
+        Benchmark::new("muladd_par", |b| {
+            let arr1 = Arc::new(Mutex::new(gen_array()));
+            let arr2 = gen_array();
+            let arr3 = gen_array();
+
+            b.iter(|| {
+                (0..=NZ).into_par_iter().for_each(|iz| {
+                    Zip::from(arr1.lock().unwrap().index_axis_mut(Axis(2), iz))
+                        .and(black_box(&arr2).index_axis(Axis(2), iz))
+                        .and(black_box(&arr3).index_axis(Axis(2), iz))
+                        .apply(|a, b, c| *a += b * c);
+                });
+            });
+        })
+        .sample_size(10),
+    );
 }
 
-fn muldiv_benchmark(c: &mut Criterion) {
-    let mut rng = rand::thread_rng();
-
-    let mut arr1 = {
-        let mut data = vec![0.0; NG * NG * NZ];
-        for e in data.iter_mut() {
-            *e = rng.gen::<f64>();
-        }
-        Array3::from_shape_vec((NG, NG, NZ), data).unwrap()
-    };
-    let arr2 = {
-        let mut data = vec![0.0; NG * NG * NZ];
-        for e in data.iter_mut() {
-            *e = rng.gen::<f64>();
-        }
-        Array3::from_shape_vec((NG, NG, NZ), data).unwrap()
-    };
-
-    c.bench_function("muldiv_overload", |b| {
-        b.iter(|| {
-            arr1 *= black_box(&arr2);
-            arr1 /= black_box(&arr2);
-        })
-    });
-    c.bench_function("muldiv_zip", |b| {
-        b.iter(|| {
-            Zip::from(&mut arr1)
-                .and(black_box(&arr2))
-                .apply(|a, b| *a *= b);
-            Zip::from(&mut arr1)
-                .and(black_box(&arr2))
-                .apply(|a, b| *a /= b);
-        })
-    });
-}
-
-criterion_group!(benches, addsub_benchmark, muldiv_benchmark);
+criterion_group!(benches, muladd_benchmark);
 criterion_main!(benches);

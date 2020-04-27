@@ -1,7 +1,12 @@
 use {
-    ndarray::{Array3, ArrayView3},
+    ndarray::{Array3, ArrayView3, ShapeBuilder},
+    rand::prelude::*,
+    rand_xorshift::XorShiftRng,
     simdeez::{avx2::*, scalar::*, sse2::*, sse41::*, *},
 };
+
+pub const NG: usize = 512;
+pub const NZ: usize = 128;
 
 // If you want your SIMD function to use use runtime feature detection to call
 // the fastest available version, use the simd_runtime_generate macro:
@@ -65,3 +70,14 @@ simd_runtime_generate!(
         }
     }
 );
+
+pub fn gen_array() -> Array3<f64> {
+    let mut rng = XorShiftRng::from_entropy();
+    let mut data = Vec::with_capacity(NG * NG * (NZ + 1));
+
+    for _ in 0..NG * NG * (NZ + 1) {
+        data.push(rng.gen());
+    }
+
+    Array3::<f64>::from_shape_vec((NG, NG, NZ + 1).strides((1, NG, NG * NG)), data).unwrap()
+}
