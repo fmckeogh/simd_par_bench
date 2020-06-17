@@ -1,12 +1,7 @@
 use {
-    ndarray::{Array3, ArrayView3, ShapeBuilder},
-    rand::prelude::*,
-    rand_xorshift::XorShiftRng,
+    ndarray::{Array2, Array3, ArrayView2, ArrayView3},
     simdeez::{avx2::*, scalar::*, sse2::*, sse41::*, *},
 };
-
-pub const NG: usize = 512;
-pub const NZ: usize = 128;
 
 // If you want your SIMD function to use use runtime feature detection to call
 // the fastest available version, use the simd_runtime_generate macro:
@@ -42,42 +37,27 @@ simd_runtime_generate!(
 );
 
 simd_runtime_generate!(
-    pub fn add(a: &mut Array3<f64>, b: ArrayView3<f64>) {
-        {
-            let a = a.as_slice_memory_order_mut().unwrap();
-            let b = b.as_slice_memory_order().unwrap();
+    pub fn muladd_arr3(a: &mut Array3<f64>, b: ArrayView3<f64>, c: ArrayView3<f64>) {
+        let a = a.as_slice_memory_order_mut().unwrap();
+        let b = b.as_slice_memory_order().unwrap();
 
-            for i in (0..a.len()).step_by(S::VF32_WIDTH) {
-                let a0 = S::loadu_pd(&a[i]);
-                let b0 = S::loadu_pd(&b[i]);
-                S::storeu_pd(&mut a[i], a0 + b0);
-            }
+        for i in (0..a.len()).step_by(S::VF32_WIDTH) {
+            let a0 = S::loadu_pd(&a[i]);
+            let b0 = S::loadu_pd(&b[i]);
+            S::storeu_pd(&mut a[i], a0 + b0);
         }
     }
 );
 
 simd_runtime_generate!(
-    pub fn sub(a: &mut Array3<f64>, b: ArrayView3<f64>) {
-        {
-            let a = a.as_slice_memory_order_mut().unwrap();
-            let b = b.as_slice_memory_order().unwrap();
+    pub fn muladd_arr2(a: &mut Array2<f64>, b: ArrayView2<f64>, c: ArrayView2<f64>) {
+        let a = a.as_slice_memory_order_mut().unwrap();
+        let b = b.as_slice_memory_order().unwrap();
 
-            for i in (0..a.len()).step_by(S::VF32_WIDTH) {
-                let a0 = S::loadu_pd(&a[i]);
-                let b0 = S::loadu_pd(&b[i]);
-                S::storeu_pd(&mut a[i], a0 - b0);
-            }
+        for i in (0..a.len()).step_by(S::VF32_WIDTH) {
+            let a0 = S::loadu_pd(&a[i]);
+            let b0 = S::loadu_pd(&b[i]);
+            S::storeu_pd(&mut a[i], a0 + b0);
         }
     }
 );
-
-pub fn gen_array() -> Array3<f64> {
-    let mut rng = XorShiftRng::from_entropy();
-    let mut data = Vec::with_capacity(NG * NG * (NZ + 1));
-
-    for _ in 0..NG * NG * (NZ + 1) {
-        data.push(rng.gen());
-    }
-
-    Array3::<f64>::from_shape_vec((NG, NG, NZ + 1).strides((1, NG, NG * NG)), data).unwrap()
-}
