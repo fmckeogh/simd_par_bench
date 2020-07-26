@@ -1,10 +1,8 @@
 use {
     arrayfire::*,
-    ndarray::Array3,
+    ndarray::{Array3, Zip},
     rand::prelude::*,
-    rayon::prelude::*,
-    simd_par_bench::*,
-    std::time::{SystemTime, UNIX_EPOCH},
+    std::time::SystemTime,
 };
 
 /*
@@ -23,98 +21,91 @@ fn main() {
         .sum::<f32>());
 }
 */
-const X: usize = 1024;
-const Y: usize = 1024;
-const Z: usize = 80;
 
 fn main() {
+    for &(ng, nz) in &[
+        (64, 16),
+        (128, 32),
+        (256, 64),
+        (512, 128),
+        (512, 256),
+        (1024, 80),
+    ] {
+        println!("ng: {}, nz: {}", ng, nz);
+
+        let mut a = gen_array(ng, nz);
+        let b = gen_array(ng, nz);
+        let c = gen_array(ng, nz);
+
+        {
+            let start = SystemTime::now();
+
+            /*Zip::from(&mut a)
+            .and(&b)
+            .and(&c)
+            .apply(|a, b, c| *a += b + c);*/
+            Zip::from(&mut a)
+                .and(&b)
+                .and(&c)
+                .apply(|a, b, c| *a *= b * c);
+
+            let end = SystemTime::now();
+            println!(
+                "ndarray took {}us",
+                end.duration_since(start).unwrap().as_micros()
+            );
+        }
+
+        {
+            let start = SystemTime::now();
+
+            /*Zip::from(&mut a)
+            .and(&b)
+            .and(&c)
+            .par_apply(|a, b, c| *a += b + c);*/
+            Zip::from(&mut a)
+                .and(&b)
+                .and(&c)
+                .par_apply(|a, b, c| *a *= b * c);
+
+            let end = SystemTime::now();
+            println!(
+                "parallel ndarray took {}us",
+                end.duration_since(start).unwrap().as_micros()
+            );
+        }
+
+        {
+            let start = SystemTime::now();
+
+            let dims = Dim4::new(&[ng as u64, ng as u64, nz as u64, 1]);
+            let mut a_af = Array::<f32>::new(a.as_slice_memory_order().unwrap(), dims);
+            let b_af = Array::<f32>::new(b.as_slice_memory_order().unwrap(), dims);
+            let c_af = Array::<f32>::new(c.as_slice_memory_order().unwrap(), dims);
+
+            a_af *= b_af * c_af;
+
+            a_af.host(a.as_slice_memory_order_mut().unwrap());
+
+            let end = SystemTime::now();
+            println!(
+                "ArrayFire took {}us",
+                end.duration_since(start).unwrap().as_micros()
+            );
+        }
+
+        println!();
+    }
+}
+
+fn gen_array(ng: usize, nz: usize) -> Array3<f32> {
     let mut rng = rand::thread_rng();
-    let a_data = {
-        let mut data = Vec::<f64>::with_capacity(X * Y * Z);
-        for _ in 0..X * Y * Z {
-            data.push(rng.gen());
-        }
-        data
-    };
-    let b_data = {
-        let mut data = Vec::<f64>::with_capacity(X * Y * Z);
-        for _ in 0..X * Y * Z {
-            data.push(rng.gen());
-        }
-        data
-    };
-    let c_data = {
-        let mut data = Vec::<f64>::with_capacity(X * Y * Z);
-        for _ in 0..X * Y * Z {
-            data.push(rng.gen());
-        }
-        data
-    };
-    let d_data = {
-        let mut data = Vec::<f64>::with_capacity(X * Y * Z);
-        for _ in 0..X * Y * Z {
-            data.push(rng.gen());
-        }
-        data
-    };
-    arrayfire_test(&a_data, &b_data);
-    arrayfire_test(&c_data, &d_data);
-    arrayfire_test(&a_data, &b_data);
-    arrayfire_test(&c_data, &d_data);
-    ndarray_test(a_data, b_data);
-    ndarray_test(c_data, d_data);
-}
 
-fn arrayfire_test(a: &[f64], b: &[f64]) {
-    println!("AF: Loading data...");
-    let start = SystemTime::now();
-    let dims = Dim4::new(&[X as u64, Y as u64, Z as u64, 1]);
-    let a = Array::<f64>::new(a, dims);
-    let b = Array::<f64>::new(b, dims);
-    let end = SystemTime::now();
-    println!(
-        "AF: Loading took {}ms\n",
-        end.duration_since(start).unwrap().as_millis()
-    );
-    println!("AF: Starting...");
-    let start = SystemTime::now();
+    let mut data = Vec::with_capacity(ng * ng * nz);
 
-    let mut c = &a * &b;
-    for _ in 0..20 {
-        c = c - &a;
-        c = c + &b;
-        c = c * &b;
-        c = &c * &c * &a;
+    for _ in 0..ng * ng * nz {
+        data.push(rng.gen());
     }
-    let sum = sum_all(&c);
 
-    let end = SystemTime::now();
-    println!(
-        "AF: Finished!\nTook {}ms\n",
-        end.duration_since(start).unwrap().as_millis()
-    );
-    println!("AF sum: {:?}", sum);
-}
-
-fn ndarray_test(a: Vec<f64>, b: Vec<f64>) {
-    println!("ND: Loading data...");
-    let a = Array3::from_shape_vec((X, Y, Z), a).unwrap();
-    let b = Array3::from_shape_vec((X, Y, Z), b).unwrap();
-
-    println!("ND: Starting...");
-    let start = SystemTime::now();
-    let mut c = &a * &b;
-    for _ in 0..20 {
-        c = c - &a;
-        c = c + &b;
-        c = c * &b;
-        c = &c * &c * &a;
-    }
-    let sum = c.sum();
-    let end = SystemTime::now();
-    println!(
-        "ND: Finished!\nTook {}ms\n",
-        end.duration_since(start).unwrap().as_millis()
-    );
-    println!("ND sum: {:?}", sum);
+    Array3::from_shape_vec((ng, ng, nz), data).unwrap()
 }
